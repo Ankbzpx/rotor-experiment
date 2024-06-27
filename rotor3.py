@@ -1,4 +1,3 @@
-# Reference: https://marctenbosch.com/quaternions/
 from attr import define
 
 import numpy as np
