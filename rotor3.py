@@ -8,6 +8,10 @@ from typing_extensions import Self
 from icecream import ic
 
 
+def normalize(a):
+    return a / (1e-8 + np.linalg.norm(a))
+
+
 @register_pytree_node_class
 @define
 class G3:
@@ -114,9 +118,17 @@ class Bivector3:
         B_out = B_a.to_G3() * B_b.to_G3()
         return Rotor3(B_out.c, Bivector3(B_out.c_01, B_out.c_12, B_out.c_20))
 
+    @staticmethod
+    def vector_project_bivector(a, B) -> Self:
+        B_g3 = B.to_G3()
+        a_g3 = G3(0, a[0], a[1], a[2], 0, 0, 0, 0)
+        dot_g3 = 0.5 * (a_g3 * B_g3 - B_g3 * a_g3)
+        a_proj_g3 = dot_g3 * B.inverse().to_G3()
+        return np.array([a_proj_g3.c_0, a_proj_g3.c_1, a_proj_g3.c_2])
+
     @property
     def squared_norm(self) -> float:
-        return np.square(jax.tree.leaves(self)).sum()
+        return -Bivector3.bivector_bivector_product(self, self).c
 
     @property
     def norm(self) -> float:
@@ -134,11 +146,7 @@ class Bivector3:
         return tree_map(lambda x: x / squared_norm, self)
 
     def project_vector(self, a):
-        B_g3 = self.to_G3()
-        a_g3 = G3(0, a[0], a[1], a[2], 0, 0, 0, 0)
-        dot_g3 = 0.5 * (a_g3 * B_g3 - B_g3 * a_g3)
-        a_proj_g3 = dot_g3 * self.inverse().to_G3()
-        return np.array([a_proj_g3.c_0, a_proj_g3.c_1, a_proj_g3.c_2])
+        return Bivector3.vector_project_bivector(a, self)
 
     def __add__(self, other) -> Self:
         if isinstance(other, Bivector3):
@@ -187,13 +195,14 @@ class Rotor3:
         return cls(c, Bivector3.tree_unflatten(None, B_flatten))
 
     @classmethod
-    def from_pairs(cls, a: np.ndarray, b: np.ndarray, normalize=True):
+    def from_pairs(cls, a: np.ndarray, b: np.ndarray):
+        a = normalize(a)
+        b = normalize(b)
+        # Half angle
+        b = normalize(0.5 * (a + b))
+
         c = np.dot(a, b)
         B = Bivector3.from_wedge(a, b)
-        if normalize:
-            norm = np.linalg.norm(a) * np.linalg.norm(b)
-            c /= norm
-            B /= norm
 
         return cls(c, B)
 
@@ -263,7 +272,7 @@ if __name__ == '__main__':
     b = np.random.randn(3)
     v = np.random.randn(3)
 
-    half_theta = angle_between(a, b)
+    theta_ref = angle_between(a, b)
 
     R = Rotor3.from_pairs(a, b)
 
@@ -272,6 +281,6 @@ if __name__ == '__main__':
     # The rotation occurs at plane a wedge b
     theta = angle_between(R.B.project_vector(v), R.B.project_vector(v_rot))
 
-    assert np.isclose(2 * half_theta, theta)
+    assert np.isclose(theta, theta_ref)
 
     ic(v, v_rot)
