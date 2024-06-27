@@ -81,6 +81,9 @@ class G3:
     def __neg__(self):
         return -1 * self
 
+    def __sub__(self, other) -> Self:
+        return self + (-1 * other)
+
 
 @register_pytree_node_class
 @define
@@ -129,6 +132,13 @@ class Bivector3:
     def inverse(self) -> Self:
         squared_norm = self.squared_norm + 1e-8
         return tree_map(lambda x: x / squared_norm, self)
+
+    def project_vector(self, a):
+        B_g3 = self.to_G3()
+        a_g3 = G3(0, a[0], a[1], a[2], 0, 0, 0, 0)
+        dot_g3 = 0.5 * (a_g3 * B_g3 - B_g3 * a_g3)
+        a_proj_g3 = dot_g3 * self.inverse().to_G3()
+        return np.array([a_proj_g3.c_0, a_proj_g3.c_1, a_proj_g3.c_2])
 
     def __add__(self, other) -> Self:
         if isinstance(other, Bivector3):
@@ -248,14 +258,20 @@ def angle_between(a, b):
 
 
 if __name__ == '__main__':
-    # The rotation occurs at plane a wedge b
-    v = np.array([0, 2, -1.5])
-    a = np.array([0, 0, -1])
-    b = np.array([0, 1, 0])
+    np.random.seed(0)
+    a = np.random.randn(3)
+    b = np.random.randn(3)
+    v = np.random.randn(3)
 
-    ic(angle_between(a, b))
+    half_theta = angle_between(a, b)
 
     R = Rotor3.from_pairs(a, b)
-    v2 = R.rotate(v)
 
-    ic(angle_between(v, v2))
+    v_rot = R.rotate(v)
+
+    # The rotation occurs at plane a wedge b
+    theta = angle_between(R.B.project_vector(v), R.B.project_vector(v_rot))
+
+    assert np.isclose(2 * half_theta, theta)
+
+    ic(v, v_rot)
